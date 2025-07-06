@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   ydb:
     image: ydbplatform/local-ydb:latest
@@ -11,14 +9,12 @@ services:
       - ydb_data:/ydb_data
     environment:
       - YDB_LOCAL_SURVIVE_RESTART=true
-    command:
-      - "-d"
-      - "/ydb_data"
     healthcheck:
-      test: [ "CMD", "/usr/bin/ydb", "-e", "grpc://localhost:2136", "-d", "/local", "discovery", "ls" ]
-      interval: 5s
+      test: ["CMD", "/usr/bin/ydb", "-e", "grpc://localhost:2136", "-d", "/local", "discovery", "ls"]
+      interval: 10s   # Проверять каждые 10 секунд
       timeout: 5s
-      retries: 10
+      retries: 15     # 15 попыток
+      start_period: 60s # Дать 60 секунд на старт перед началом проверок
 
   cassandra:
     image: cassandra:4.1
@@ -30,13 +26,20 @@ services:
       CASSANDRA_DC: dc1
       CASSANDRA_RACK: rack1
       CASSANDRA_ENDPOINT_SNITCH: GossipingPropertyFileSnitch
+    healthcheck:
+      test: ["CMD", "cqlsh", "-e", "describe keyspaces"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
 
   tester:
     build: .
     container_name: go-tester
     depends_on:
-      ydb: { condition: service_healthy }
-      cassandra: { condition: service_started }
+      ydb:
+        condition: service_healthy
+      cassandra:
+        condition: service_healthy
     ports:
       - "8081:8081"
     environment:
