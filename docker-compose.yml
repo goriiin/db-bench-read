@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+  ydb:
+    image: ydbplatform/local-ydb:latest
+    container_name: ydb-db
+    ports:
+      - "2136:2136"
+      - "8765:8765"
+    volumes:
+      - ydb_data:/ydb_data
+    environment:
+      - YDB_LOCAL_SURVIVE_RESTART=true
+    command:
+      - "-d"
+      - "/ydb_data"
+    healthcheck:
+      test: [ "CMD", "/usr/bin/ydb", "-e", "grpc://localhost:2136", "-d", "/local", "discovery", "ls" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  cassandra:
+    image: cassandra:4.1
+    container_name: cassandra-db
+    ports: ["9042:9042"]
+    volumes: [cassandra_data:/var/lib/cassandra]
+    environment:
+      CASSANDRA_CLUSTER_NAME: TestCluster
+      CASSANDRA_DC: dc1
+      CASSANDRA_RACK: rack1
+      CASSANDRA_ENDPOINT_SNITCH: GossipingPropertyFileSnitch
+
+  tester:
+    build: .
+    container_name: go-tester
+    depends_on:
+      ydb: { condition: service_healthy }
+      cassandra: { condition: service_started }
+    ports:
+      - "8081:8081"
+    environment:
+      - APP_PORT=8081
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports: ["9090:9090"]
+    volumes: ["./prometheus:/etc/prometheus"]
+    command: ['--config.file=/etc/prometheus/prometheus.yml']
+    depends_on: [tester]
+
+  grafana:
+    image: grafana/grafana-oss:latest
+    container_name: grafana
+    ports: ["3000:3000"]
+    depends_on: [prometheus]
+
+volumes:
+  ydb_data:
+  cassandra_data:

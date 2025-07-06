@@ -1,0 +1,7 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: 'benchmark_tester'
+    static_configs:
+      - targets: ['go-tester:8081']
