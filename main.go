@@ -134,6 +134,7 @@ func NewPostgresTester(ctx context.Context) (*PostgresTester, error) {
 }
 
 func (t *PostgresTester) RunTest(ctx context.Context, wg *sync.WaitGroup) {
+	log.Printf("RunTest db %s", t.dbName)
 	query := fmt.Sprintf("SELECT id FROM %s WHERE id = $1", tableName)
 	for i := 0; i < workerCount; i++ {
 		wg.Add(1)
@@ -168,7 +169,6 @@ type CassandraTester struct {
 }
 
 func NewCassandraTester(ctx context.Context) (*CassandraTester, error) {
-	// ... (логика подключения из предыдущего ответа)
 	cluster := gocql.NewCluster(cassandraHost)
 	cluster.Keyspace = "system"
 	cluster.Timeout = 20 * time.Second
@@ -200,6 +200,7 @@ func NewCassandraTester(ctx context.Context) (*CassandraTester, error) {
 }
 
 func (t *CassandraTester) RunTest(ctx context.Context, wg *sync.WaitGroup) {
+	log.Printf("RunTest db %s", t.dbName)
 	query := fmt.Sprintf("SELECT id FROM %s WHERE id = ?", tableName)
 	for i := 0; i < workerCount; i++ {
 		wg.Add(1)
