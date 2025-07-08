@@ -196,32 +196,63 @@ func (t *PostgresTester) Close() { t.pool.Close() }
 type CassandraTester struct{ session *gocql.Session }
 
 func NewCassandraTester(ctx context.Context) (*CassandraTester, error) {
+	var session *gocql.Session
+	var err error
+
+	// --- 1. Подключение к системному кейспейсу с ретраями ---
 	cluster := gocql.NewCluster(cassandraHost)
 	cluster.Keyspace = "system"
 	cluster.Timeout = 20 * time.Second
-	cluster.ConnectTimeout = connectTimeout
-	session, err := cluster.CreateSession()
-	if err != nil {
-		return nil, fmt.Errorf("initial cassandra connection failed: %w", err)
+	cluster.ConnectTimeout = 15 * time.Second
+
+	log.Println("Cassandra: attempting to connect to system keyspace...")
+	for i := 0; i < 5; i++ {
+		session, err = cluster.CreateSession()
+		if err == nil {
+			log.Println("Cassandra: system connection successful.")
+			break // Успех
+		}
+		log.Printf("Cassandra connect failed (%v), retrying in 5s...", err)
+		time.Sleep(5 * time.Second)
 	}
-	err = session.Query(fmt.Sprintf("CREATE KEYSPACE IF NOT EXISTS %s WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1}", keyspace)).Exec()
-	session.Close()
 	if err != nil {
-		return nil, fmt.Errorf("cassandra CREATE KEYSPACE failed: %w", err)
+		return nil, fmt.Errorf("cassandra connection failed after retries: %w", err)
 	}
+	defer session.Close()
+
+	// --- 2. Создание кейспейса и таблицы ---
+	err = session.Query(fmt.Sprintf(
+		"CREATE KEYSPACE IF NOT EXISTS %s WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1}",
+		keyspace,
+	)).Exec()
+	if err != nil {
+		return nil, fmt.Errorf("cassandra: CREATE KEYSPACE failed: %w", err)
+	}
+	log.Printf("Cassandra: Keyspace %s ensured.", keyspace)
+
+	// --- 3. Финальное подключение к рабочему кейспейсу ---
 	cluster.Keyspace = keyspace
 	finalSession, err := cluster.CreateSession()
-	return &CassandraTester{session: finalSession}, err
+	if err != nil {
+		return nil, fmt.Errorf("cassandra: connection to keyspace '%s' failed: %w", keyspace, err)
+	}
+	log.Printf("Cassandra: Final session to keyspace '%s' created.", keyspace)
+
+	return &CassandraTester{session: finalSession}, nil
 }
+
+// Замените существующий Seed на этот, чтобы он не создавал таблицу (она уже создана в New)
 func (t *CassandraTester) Seed(ctx context.Context) error {
+	// Таблица теперь создается при инициализации, но мы можем создать ее здесь для идемпотентности
 	err := t.session.Query(fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s.%s (
 		id bigint PRIMARY KEY,
 		experiment_name text,
 		targeting_rules text
 	)`, keyspace, tableName)).Exec()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create table in cassandra: %w", err)
 	}
+
 	log.Println("Cassandra: Writing rows...")
 	query := fmt.Sprintf("INSERT INTO %s (id, experiment_name, targeting_rules) VALUES (?, ?, ?)", tableName)
 	for i := 1; i <= recordCount; i++ {
@@ -235,6 +266,7 @@ func (t *CassandraTester) Seed(ctx context.Context) error {
 	}
 	return nil
 }
+
 func (t *CassandraTester) RunTest(ctx context.Context, wg *sync.WaitGroup) {
 	query := fmt.Sprintf("SELECT id FROM %s WHERE id = ?", tableName)
 	for i := 0; i < workerCount; i++ {

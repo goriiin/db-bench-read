@@ -27,6 +27,7 @@ seed-postgres: up
 # Заполняет Cassandra данными
 seed-cassandra: up
 	@echo "Seeding Cassandra..."
+	@sleep 15
 	docker compose run --rm tester --mode=seed --db=cassandra
 
 # Заполняет MongoDB данными
