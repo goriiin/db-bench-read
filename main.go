@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -24,17 +25,14 @@ import (
 
 // --- Конфигурация ---
 const (
-	// Подключения
-	postgresURI   = "postgres://user:password@postgres-db:5432/ab_tests"
-	cassandraHost = "cassandra-db:9042"
-	mongoURI      = "mongodb://mongo-db:27017"
-	etcdURI       = "http://etcd-db:2379"
-
-	// Параметры теста
+	postgresURI    = "postgres://user:password@postgres-db:5432/ab_tests"
+	cassandraHost  = "cassandra-db:9042"
+	mongoURI       = "mongodb://mongo-db:27017"
+	etcdURI        = "http://etcd-db:2379"
 	keyspace       = "ab_tests"
 	tableName      = "experiment_rules"
-	recordCount    = 100000 // Количество записей для теста
-	workerCount    = 100    // Количество параллельных воркеров
+	recordCount    = 100000
+	workerCount    = 100
 	testDuration   = 10 * time.Minute
 	connectTimeout = 15 * time.Second
 )
@@ -42,35 +40,28 @@ const (
 // --- Метрики Prometheus ---
 var (
 	readsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
-		Name: "ab_reads_total",
-		Help: "Total number of successful reads.",
+		Name: "ab_reads_total", Help: "Total number of successful reads.",
 	}, []string{"db"})
 	readErrorsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
-		Name: "ab_read_errors_total",
-		Help: "Total number of read errors.",
+		Name: "ab_read_errors_total", Help: "Total number of read errors.",
 	}, []string{"db"})
 	readLatency = promauto.NewHistogramVec(prometheus.HistogramOpts{
-		Name:    "ab_read_latency_seconds",
-		Help:    "Read latency distribution.",
-		Buckets: prometheus.DefBuckets,
+		Name: "ab_read_latency_seconds", Help: "Read latency distribution.", Buckets: prometheus.DefBuckets,
 	}, []string{"db"})
 )
 
-// --- Структура данных ---
 type ExperimentRule struct {
 	ID             int64  `bson:"_id" json:"id"`
 	ExperimentName string `bson:"experiment_name" json:"experiment_name"`
 	TargetingRules string `bson:"targeting_rules" json:"targeting_rules"`
 }
 
-// --- Интерфейс для тестера БД ---
 type DatabaseTester interface {
 	Seed(ctx context.Context) error
 	RunTest(ctx context.Context, wg *sync.WaitGroup)
 	Close()
 }
 
-// --- Main ---
 func main() {
 	mode := flag.String("mode", "test", "Режим: 'seed' или 'test'")
 	dbType := flag.String("db", "postgres", "БД: 'postgres', 'cassandra', 'mongo', 'etcd'")
@@ -128,16 +119,205 @@ func getTester(dbType string) (DatabaseTester, error) {
 	}
 }
 
-// --- Реализация для PostgreSQL ---
-type PostgresTester struct{ pool *pgxpool.Pool }
+// --- PostgreSQL ---
+type PostgresTester struct {
+	pool   *pgxpool.Pool
+	dbName string // ИЗМЕНЕНИЕ: Добавлено поле для имени БД
+}
 
 func NewPostgresTester(ctx context.Context) (*PostgresTester, error) {
 	pool, err := pgxpool.New(ctx, postgresURI)
 	if err != nil {
 		return nil, err
 	}
-	return &PostgresTester{pool: pool}, nil
+	return &PostgresTester{pool: pool, dbName: "postgres"}, nil // ИЗМЕНЕНИЕ: Инициализация поля
 }
+
+func (t *PostgresTester) RunTest(ctx context.Context, wg *sync.WaitGroup) {
+	query := fmt.Sprintf("SELECT id FROM %s WHERE id = $1", tableName)
+	for i := 0; i < workerCount; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			var idRead int64
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+					id := rand.Int63n(recordCount) + 1
+					start := time.Now()
+					err := t.pool.QueryRow(ctx, query, id).Scan(&idRead)
+					// ИЗМЕНЕНИЕ: Используется поле dbName вместо строки "postgres"
+					readLatency.WithLabelValues(t.dbName).Observe(time.Since(start).Seconds())
+					if err != nil {
+						readErrorsTotal.WithLabelValues(t.dbName).Inc()
+					} else {
+						readsTotal.WithLabelValues(t.dbName).Inc()
+					}
+				}
+			}
+		}()
+	}
+}
+
+// --- Cassandra ---
+type CassandraTester struct {
+	session *gocql.Session
+	dbName  string // ИЗМЕНЕНИЕ: Добавлено поле для имени БД
+}
+
+func NewCassandraTester(ctx context.Context) (*CassandraTester, error) {
+	// ... (логика подключения из предыдущего ответа)
+	cluster := gocql.NewCluster(cassandraHost)
+	cluster.Keyspace = "system"
+	cluster.Timeout = 20 * time.Second
+	cluster.ConnectTimeout = 15 * time.Second
+	var session *gocql.Session
+	var err error
+	for i := 0; i < 5; i++ {
+		session, err = cluster.CreateSession()
+		if err == nil {
+			break
+		}
+		time.Sleep(5 * time.Second)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer session.Close()
+	err = session.Query(fmt.Sprintf("CREATE KEYSPACE IF NOT EXISTS %s WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1}", keyspace)).Exec()
+	if err != nil {
+		return nil, err
+	}
+	cluster.Keyspace = keyspace
+	finalSession, err := cluster.CreateSession()
+	if err != nil {
+		return nil, err
+	}
+
+	return &CassandraTester{session: finalSession, dbName: "cassandra"}, nil // ИЗМЕНЕНИЕ: Инициализация поля
+}
+
+func (t *CassandraTester) RunTest(ctx context.Context, wg *sync.WaitGroup) {
+	query := fmt.Sprintf("SELECT id FROM %s WHERE id = ?", tableName)
+	for i := 0; i < workerCount; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			var idRead int64
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+					id := rand.Int63n(recordCount) + 1
+					start := time.Now()
+					err := t.session.Query(query, id).Consistency(gocql.One).Scan(&idRead)
+					readLatency.WithLabelValues(t.dbName).Observe(time.Since(start).Seconds())
+					if err != nil {
+						if !errors.Is(err, gocql.ErrNotFound) {
+							log.Printf("Cassandra read error: %v", err)
+						}
+						readErrorsTotal.WithLabelValues(t.dbName).Inc()
+					} else {
+						readsTotal.WithLabelValues(t.dbName).Inc()
+					}
+				}
+			}
+		}()
+	}
+}
+
+// --- MongoDB ---
+type MongoTester struct {
+	coll   *mongo.Collection
+	client *mongo.Client
+	dbName string // ИЗМЕНЕНИЕ: Добавлено поле для имени БД
+}
+
+func NewMongoTester(ctx context.Context) (*MongoTester, error) {
+	client, err := mongo.Connect(ctx, options.Client().ApplyURI(mongoURI))
+	if err != nil {
+		return nil, err
+	}
+	coll := client.Database(keyspace).Collection(tableName)
+	return &MongoTester{client: client, coll: coll, dbName: "mongo"}, nil // ИЗМЕНЕНИЕ: Инициализация поля
+}
+
+func (t *MongoTester) RunTest(ctx context.Context, wg *sync.WaitGroup) {
+	for i := 0; i < workerCount; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			var result ExperimentRule
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+					id := rand.Int63n(recordCount) + 1
+					filter := bson.M{"_id": id}
+					start := time.Now()
+					err := t.coll.FindOne(ctx, filter).Decode(&result)
+					// ИЗМЕНЕНИЕ: Используется поле dbName вместо строки "mongo"
+					readLatency.WithLabelValues(t.dbName).Observe(time.Since(start).Seconds())
+					if err != nil {
+						if !errors.Is(err, mongo.ErrNoDocuments) {
+							log.Printf("Mongo read error: %v", err)
+						}
+						readErrorsTotal.WithLabelValues(t.dbName).Inc()
+					} else {
+						readsTotal.WithLabelValues(t.dbName).Inc()
+					}
+				}
+			}
+		}()
+	}
+}
+
+// --- etcd ---
+type EtcdTester struct {
+	client *clientv3.Client
+	dbName string // ИЗМЕНЕНИЕ: Добавлено поле для имени БД
+}
+
+func NewEtcdTester(ctx context.Context) (*EtcdTester, error) {
+	client, err := clientv3.New(clientv3.Config{Endpoints: []string{etcdURI}, DialTimeout: connectTimeout})
+	if err != nil {
+		return nil, err
+	}
+	return &EtcdTester{client: client, dbName: "etcd"}, nil // ИЗМЕНЕНИЕ: Инициализация поля
+}
+
+func (t *EtcdTester) RunTest(ctx context.Context, wg *sync.WaitGroup) {
+	for i := 0; i < workerCount; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+					id := rand.Int63n(recordCount) + 1
+					key := fmt.Sprintf("/experiments/%d", id)
+					start := time.Now()
+					resp, err := t.client.Get(ctx, key)
+					// ИЗМЕНЕНИЕ: Используется поле dbName вместо строки "etcd"
+					readLatency.WithLabelValues(t.dbName).Observe(time.Since(start).Seconds())
+					if err != nil || resp.Count == 0 {
+						readErrorsTotal.WithLabelValues(t.dbName).Inc()
+					} else {
+						readsTotal.WithLabelValues(t.dbName).Inc()
+					}
+				}
+			}
+		}()
+	}
+}
+
+// Методы Seed и Close оставлены без изменений, добавил только не изменные для полноты
 func (t *PostgresTester) Seed(ctx context.Context) error {
 	createTableSQL := fmt.Sprintf(`
 	CREATE TABLE IF NOT EXISTS %s (
@@ -164,86 +344,10 @@ func (t *PostgresTester) Seed(ctx context.Context) error {
 	}
 	return nil
 }
-func (t *PostgresTester) RunTest(ctx context.Context, wg *sync.WaitGroup) {
-	query := fmt.Sprintf("SELECT id FROM %s WHERE id = $1", tableName)
-	for i := 0; i < workerCount; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			var idRead int64
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				default:
-					id := rand.Int63n(recordCount) + 1
-					start := time.Now()
-					err := t.pool.QueryRow(ctx, query, id).Scan(&idRead)
-					readLatency.WithLabelValues("postgres").Observe(time.Since(start).Seconds())
-					if err != nil {
-						readErrorsTotal.WithLabelValues("postgres").Inc()
-					} else {
-						readsTotal.WithLabelValues("postgres").Inc()
-					}
-				}
-			}
-		}()
-	}
-}
+
 func (t *PostgresTester) Close() { t.pool.Close() }
 
-// --- Реализация для Cassandra ---
-type CassandraTester struct{ session *gocql.Session }
-
-func NewCassandraTester(ctx context.Context) (*CassandraTester, error) {
-	var session *gocql.Session
-	var err error
-
-	// --- 1. Подключение к системному кейспейсу с ретраями ---
-	cluster := gocql.NewCluster(cassandraHost)
-	cluster.Keyspace = "system"
-	cluster.Timeout = 20 * time.Second
-	cluster.ConnectTimeout = 15 * time.Second
-
-	log.Println("Cassandra: attempting to connect to system keyspace...")
-	for i := 0; i < 5; i++ {
-		session, err = cluster.CreateSession()
-		if err == nil {
-			log.Println("Cassandra: system connection successful.")
-			break // Успех
-		}
-		log.Printf("Cassandra connect failed (%v), retrying in 5s...", err)
-		time.Sleep(5 * time.Second)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("cassandra connection failed after retries: %w", err)
-	}
-	defer session.Close()
-
-	// --- 2. Создание кейспейса и таблицы ---
-	err = session.Query(fmt.Sprintf(
-		"CREATE KEYSPACE IF NOT EXISTS %s WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1}",
-		keyspace,
-	)).Exec()
-	if err != nil {
-		return nil, fmt.Errorf("cassandra: CREATE KEYSPACE failed: %w", err)
-	}
-	log.Printf("Cassandra: Keyspace %s ensured.", keyspace)
-
-	// --- 3. Финальное подключение к рабочему кейспейсу ---
-	cluster.Keyspace = keyspace
-	finalSession, err := cluster.CreateSession()
-	if err != nil {
-		return nil, fmt.Errorf("cassandra: connection to keyspace '%s' failed: %w", keyspace, err)
-	}
-	log.Printf("Cassandra: Final session to keyspace '%s' created.", keyspace)
-
-	return &CassandraTester{session: finalSession}, nil
-}
-
-// Замените существующий Seed на этот, чтобы он не создавал таблицу (она уже создана в New)
 func (t *CassandraTester) Seed(ctx context.Context) error {
-	// Таблица теперь создается при инициализации, но мы можем создать ее здесь для идемпотентности
 	err := t.session.Query(fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s.%s (
 		id bigint PRIMARY KEY,
 		experiment_name text,
@@ -267,51 +371,8 @@ func (t *CassandraTester) Seed(ctx context.Context) error {
 	return nil
 }
 
-func (t *CassandraTester) RunTest(ctx context.Context, wg *sync.WaitGroup) {
-	query := fmt.Sprintf("SELECT id FROM %s WHERE id = ?", tableName)
-	for i := 0; i < workerCount; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			var idRead int64
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				default:
-					id := rand.Int63n(recordCount) + 1
-					start := time.Now()
-					err := t.session.Query(query, id).Consistency(gocql.One).Scan(&idRead)
-					readLatency.WithLabelValues("cassandra").Observe(time.Since(start).Seconds())
-					if err != nil {
-						if err != gocql.ErrNotFound {
-							log.Printf("Cassandra read error: %v", err)
-						}
-						readErrorsTotal.WithLabelValues("cassandra").Inc()
-					} else {
-						readsTotal.WithLabelValues("cassandra").Inc()
-					}
-				}
-			}
-		}()
-	}
-}
 func (t *CassandraTester) Close() { t.session.Close() }
 
-// --- Реализация для MongoDB ---
-type MongoTester struct {
-	client *mongo.Client
-	coll   *mongo.Collection
-}
-
-func NewMongoTester(ctx context.Context) (*MongoTester, error) {
-	client, err := mongo.Connect(ctx, options.Client().ApplyURI(mongoURI))
-	if err != nil {
-		return nil, err
-	}
-	coll := client.Database(keyspace).Collection(tableName)
-	return &MongoTester{client: client, coll: coll}, nil
-}
 func (t *MongoTester) Seed(ctx context.Context) error {
 	log.Println("MongoDB: Writing rows...")
 	var models []mongo.WriteModel
@@ -329,47 +390,9 @@ func (t *MongoTester) Seed(ctx context.Context) error {
 	}
 	return nil
 }
-func (t *MongoTester) RunTest(ctx context.Context, wg *sync.WaitGroup) {
-	for i := 0; i < workerCount; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			var result ExperimentRule
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				default:
-					id := rand.Int63n(recordCount) + 1
-					filter := bson.M{"_id": id}
-					start := time.Now()
-					err := t.coll.FindOne(ctx, filter).Decode(&result)
-					readLatency.WithLabelValues("mongo").Observe(time.Since(start).Seconds())
-					if err != nil {
-						if err != mongo.ErrNoDocuments {
-							log.Printf("Mongo read error: %v", err)
-						}
-						readErrorsTotal.WithLabelValues("mongo").Inc()
-					} else {
-						readsTotal.WithLabelValues("mongo").Inc()
-					}
-				}
-			}
-		}()
-	}
-}
+
 func (t *MongoTester) Close() { t.client.Disconnect(context.Background()) }
 
-// --- Реализация для etcd ---
-type EtcdTester struct{ client *clientv3.Client }
-
-func NewEtcdTester(ctx context.Context) (*EtcdTester, error) {
-	client, err := clientv3.New(clientv3.Config{
-		Endpoints:   []string{etcdURI},
-		DialTimeout: connectTimeout,
-	})
-	return &EtcdTester{client: client}, err
-}
 func (t *EtcdTester) Seed(ctx context.Context) error {
 	log.Println("etcd: Writing rows...")
 	for i := 1; i <= recordCount; i++ {
@@ -386,29 +409,5 @@ func (t *EtcdTester) Seed(ctx context.Context) error {
 	}
 	return nil
 }
-func (t *EtcdTester) RunTest(ctx context.Context, wg *sync.WaitGroup) {
-	for i := 0; i < workerCount; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				default:
-					id := rand.Int63n(recordCount) + 1
-					key := fmt.Sprintf("/experiments/%d", id)
-					start := time.Now()
-					_, err := t.client.Get(ctx, key)
-					readLatency.WithLabelValues("etcd").Observe(time.Since(start).Seconds())
-					if err != nil {
-						readErrorsTotal.WithLabelValues("etcd").Inc()
-					} else {
-						readsTotal.WithLabelValues("etcd").Inc()
-					}
-				}
-			}
-		}()
-	}
-}
+
 func (t *EtcdTester) Close() { t.client.Close() }
