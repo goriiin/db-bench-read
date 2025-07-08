@@ -1,15 +1,22 @@
-.PHONY: all up down logs \
+.PHONY: all up down logs prune \
         seed-postgres seed-cassandra seed-mongo seed-etcd \
         test-postgres test-cassandra test-mongo test-etcd
 
-# Запускает все сервисы в фоновом режиме
+# ВНИМАНИЕ: Эта команда удалит ВСЕ контейнеры и неиспользуемые Docker-объекты (образы, сети, volumes) в вашей системе.
+prune:
+	@echo "Stopping and removing ALL Docker containers..."
+	@if [ -n "$$(docker ps -a -q)" ]; then docker rm -f $$(docker ps -a -q); else echo "No containers to remove."; fi
+	@echo "Pruning Docker system (all unused containers, networks, images, volumes)..."
+	docker system prune --volumes -a -f
+
+# Запускает все сервисы проекта в фоновом режиме
 up:
-	@echo "Starting all services..."
+	@echo "Starting project services..."
 	docker compose up -d
 
-# Останавливает и удаляет все сервисы
+# Останавливает и удаляет сервисы, определенные в docker-compose.yml
 down:
-	@echo "Stopping all services..."
+	@echo "Stopping project services..."
 	docker compose down --volumes
 
 # Заполняет PostgreSQL данными
@@ -54,6 +61,4 @@ test-etcd:
 
 # Открывает логи тестера
 logs:
-	docker compose logs -f tester```
-
-### `db-benchmark/go.mod`
+	docker compose logs -f tester
