@@ -1,4 +1,6 @@
-.PHONY: all build up down seed-ydb seed-cassandra test-ydb test-cassandra logs
+.PHONY: all up down logs \
+        seed-postgres seed-cassandra seed-mongo seed-etcd \
+        test-postgres test-cassandra test-mongo test-etcd
 
 # Запускает все сервисы в фоновом режиме
 up:
@@ -10,28 +12,48 @@ down:
 	@echo "Stopping all services..."
 	docker compose down --volumes
 
-# Заполняет YDB начальными данными
-seed-ydb: up
-	@echo "Seeding YDB with 1,000,000 records..."
-	docker compose run --rm tester --mode=seed --db=ydb
+# Заполняет PostgreSQL данными
+seed-postgres: up
+	@echo "Seeding PostgreSQL..."
+	docker compose run --rm tester --mode=seed --db=postgres
 
-# Заполняет Cassandra начальными данными
+# Заполняет Cassandra данными
 seed-cassandra: up
-	@echo "Waiting for Cassandra to be fully ready..."
-	@sleep 30
-	@echo "Seeding Cassandra with 1,000,000 records..."
+	@echo "Seeding Cassandra..."
 	docker compose run --rm tester --mode=seed --db=cassandra
 
-# Запускает 10-минутный тест на чтение для YDB
-test-ydb:
-	@echo "Starting YDB read test for 10 minutes. View results at http://localhost:3000"
-	docker compose run --rm tester --mode=test --db=ydb
+# Заполняет MongoDB данными
+seed-mongo: up
+	@echo "Seeding MongoDB..."
+	docker compose run --rm tester --mode=seed --db=mongo
 
-# Запускает 10-минутный тест на чтение для Cassandra
+# Заполняет etcd данными
+seed-etcd: up
+	@echo "Seeding etcd..."
+	docker compose run --rm tester --mode=seed --db=etcd
+
+# Запускает тест на чтение для PostgreSQL
+test-postgres:
+	@echo "Starting PostgreSQL read test. View results at http://localhost:3000"
+	docker compose run --rm tester --mode=test --db=postgres
+
+# Запускает тест на чтение для Cassandra
 test-cassandra:
-	@echo "Starting Cassandra read test for 10 minutes. View results at http://localhost:3000"
+	@echo "Starting Cassandra read test. View results at http://localhost:3000"
 	docker compose run --rm tester --mode=test --db=cassandra
+
+# Запускает тест на чтение для MongoDB
+test-mongo:
+	@echo "Starting MongoDB read test. View results at http://localhost:3000"
+	docker compose run --rm tester --mode=test --db=mongo
+
+# Запускает тест на чтение для etcd
+test-etcd:
+	@echo "Starting etcd read test. View results at http://localhost:3000"
+	docker compose run --rm tester --mode=test --db=etcd
 
 # Открывает логи тестера
 logs:
-	docker compose logs -f tester
+	docker compose logs -f tester```
+
+### `db-benchmark/go.mod`

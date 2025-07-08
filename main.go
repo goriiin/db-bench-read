@@ -2,35 +2,45 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
 	"math/rand"
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
 	"github.com/gocql/gocql"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/ydb-platform/ydb-go-sdk/v3"
-	"github.com/ydb-platform/ydb-go-sdk/v3/table"
-	"github.com/ydb-platform/ydb-go-sdk/v3/table/options"
-	"github.com/ydb-platform/ydb-go-sdk/v3/table/types"
+	clientv3 "go.etcd.io/etcd/client/v3"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
+// --- Конфигурация ---
 const (
-	ydbEndpoint   = "grpc://ydb-db:2136"
-	ydbDatabase   = "/local"
+	// Подключения
+	postgresURI   = "postgres://user:password@postgres-db:5432/ab_tests"
 	cassandraHost = "cassandra-db:9042"
-	keyspace      = "ab_tests"
-	tableName     = "experiment_rules"
-	recordCount   = 1000000
-	workerCount   = 100
-	testDuration  = 10 * time.Minute
+	mongoURI      = "mongodb://mongo-db:27017"
+	etcdURI       = "http://etcd-db:2379"
+
+	// Параметры теста
+	keyspace       = "ab_tests"
+	tableName      = "experiment_rules"
+	recordCount    = 100000 // Количество записей для теста
+	workerCount    = 100    // Количество параллельных воркеров
+	testDuration   = 10 * time.Minute
+	connectTimeout = 15 * time.Second
 )
 
+// --- Метрики Prometheus ---
 var (
 	readsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "ab_reads_total",
@@ -47,9 +57,24 @@ var (
 	}, []string{"db"})
 )
 
+// --- Структура данных ---
+type ExperimentRule struct {
+	ID             int64  `bson:"_id" json:"id"`
+	ExperimentName string `bson:"experiment_name" json:"experiment_name"`
+	TargetingRules string `bson:"targeting_rules" json:"targeting_rules"`
+}
+
+// --- Интерфейс для тестера БД ---
+type DatabaseTester interface {
+	Seed(ctx context.Context) error
+	RunTest(ctx context.Context, wg *sync.WaitGroup)
+	Close()
+}
+
+// --- Main ---
 func main() {
-	mode := flag.String("mode", "test", "Mode to run: 'seed' or 'test'")
-	dbType := flag.String("db", "ydb", "Database to use: 'ydb' or 'cassandra'")
+	mode := flag.String("mode", "test", "Режим: 'seed' или 'test'")
+	dbType := flag.String("db", "postgres", "БД: 'postgres', 'cassandra', 'mongo', 'etcd'")
 	flag.Parse()
 
 	go func() {
@@ -60,200 +85,88 @@ func main() {
 	}()
 	log.Println("Metrics server started on :8081")
 
+	tester, err := getTester(*dbType)
+	if err != nil {
+		log.Fatalf("Failed to initialize tester: %v", err)
+	}
+	defer tester.Close()
+
 	switch *mode {
 	case "seed":
-		seedDatabase(*dbType)
+		log.Printf("Starting seed for %s...", *dbType)
+		if err := tester.Seed(context.Background()); err != nil {
+			log.Fatalf("Seeding failed for %s: %v", *dbType, err)
+		}
+		log.Printf("Seeding for %s completed.", *dbType)
 	case "test":
-		runTest(*dbType)
+		log.Printf("Starting test for %s for %v...", *dbType, testDuration)
+		ctx, cancel := context.WithTimeout(context.Background(), testDuration)
+		defer cancel()
+		var wg sync.WaitGroup
+		tester.RunTest(ctx, &wg)
+		wg.Wait()
+		log.Printf("Test for %s completed.", *dbType)
 	default:
 		log.Fatalf("Unknown mode: %s", *mode)
 	}
 }
 
-func seedDatabase(dbType string) {
-	log.Printf("Starting seed for %s...", dbType)
-	switch dbType {
-	case "ydb":
-		seedYDB()
-	case "cassandra":
-		seedCassandra()
-	}
-	log.Printf("Seeding for %s completed.", dbType)
-}
-
-func runTest(dbType string) {
-	log.Printf("Starting test for %s for %v...", dbType, testDuration)
-	ctx, cancel := context.WithTimeout(context.Background(), testDuration)
+func getTester(dbType string) (DatabaseTester, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), connectTimeout)
 	defer cancel()
 
-	var wg sync.WaitGroup
 	switch dbType {
-	case "ydb":
-		runYDBTest(ctx, &wg)
+	case "postgres":
+		return NewPostgresTester(ctx)
 	case "cassandra":
-		runCassandraTest(ctx, &wg)
-	}
-	wg.Wait()
-	log.Printf("Test for %s completed.", dbType)
-}
-
-func connectYDB() (*ydb.Driver, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	return ydb.New(ctx, ydb.WithEndpoint(ydbEndpoint), ydb.WithDatabase(ydbDatabase), ydb.WithAnonymousCredentials())
-}
-
-func seedYDB() {
-	ctx := context.Background()
-	db, err := connectYDB()
-	if err != nil {
-		log.Fatalf("Failed to connect to YDB: %v", err)
-	}
-	defer db.Close(ctx)
-
-	// Create Table
-	err = db.Table().Do(ctx, func(ctx context.Context, s table.Session) error {
-		return s.CreateTable(ctx, db.Name()+"/"+tableName,
-			options.WithColumn("experiment_id", types.TypeInt64), // NOT OPTIONAL
-			options.WithColumn("experiment_name", types.Optional(types.TypeText)),
-			options.WithColumn("targeting_rules", types.Optional(types.TypeJSON)),
-			options.WithColumn("buckets", types.Optional(types.TypeText)),
-			options.WithPrimaryKeyColumn("experiment_id"),
-		)
-	})
-	if err != nil {
-		log.Printf("YDB CreateTable failed (might already exist, which is fine): %v", err)
-	}
-
-	// Prepare data for bulk upsert
-	rules := make([]types.Value, 0, recordCount)
-	for i := 0; i < recordCount; i++ {
-		rules = append(rules, types.StructValue(
-			types.StructFieldValue("experiment_id", types.Int64Value(int64(i+1))),
-			types.StructFieldValue("experiment_name", types.OptionalValue(types.TextValue(fmt.Sprintf("Test %d", i+1)))),
-			types.StructFieldValue("targeting_rules", types.OptionalValue(types.JSONValue(`{"country":"US"}`))),
-			types.StructFieldValue("buckets", types.OptionalValue(types.TextValue(`[{"id":0,"share":50}]`))),
-		))
-	}
-
-	log.Println("YDB: Writing rows...")
-	err = db.Table().Do(ctx, func(ctx context.Context, s table.Session) error {
-		return s.BulkUpsert(ctx, ydbDatabase+"/"+tableName, types.ListValue(rules...))
-	})
-	if err != nil {
-		log.Fatalf("YDB BulkUpsert failed: %v", err)
+		return NewCassandraTester(ctx)
+	case "mongo":
+		return NewMongoTester(ctx)
+	case "etcd":
+		return NewEtcdTester(ctx)
+	default:
+		return nil, fmt.Errorf("unknown database type: %s", dbType)
 	}
 }
 
-func runYDBTest(ctx context.Context, wg *sync.WaitGroup) {
-	db, err := connectYDB()
+// --- Реализация для PostgreSQL ---
+type PostgresTester struct{ pool *pgxpool.Pool }
+
+func NewPostgresTester(ctx context.Context) (*PostgresTester, error) {
+	pool, err := pgxpool.New(ctx, postgresURI)
 	if err != nil {
-		log.Fatalf("Failed to connect to YDB: %v", err)
+		return nil, err
 	}
-	defer db.Close(ctx)
-
-	// FIX: Use correct transaction control constructor
-	txControl := table.TxControl()
-	readQuery := fmt.Sprintf("DECLARE $id AS Int64; SELECT experiment_id FROM `%s` WHERE experiment_id = $id;", tableName)
-
-	for i := 0; i < workerCount; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				default:
-					start := time.Now()
-					id := rand.Int63n(recordCount) + 1
-					err := db.Table().Do(ctx, func(ctx context.Context, s table.Session) error {
-						_, res, err := s.Execute(ctx, txControl, readQuery, table.NewQueryParameters(table.ValueParam("$id", types.Int64Value(id))))
-						if err == nil {
-							_ = res.Close()
-						}
-						return err
-					})
-					readLatency.WithLabelValues("ydb").Observe(time.Since(start).Seconds())
-					if err != nil {
-						readErrorsTotal.WithLabelValues("ydb").Inc()
-					} else {
-						readsTotal.WithLabelValues("ydb").Inc()
-					}
-				}
-			}
-		}()
-	}
+	return &PostgresTester{pool: pool}, nil
 }
-
-func connectCassandra() (*gocql.Session, error) {
-	cluster := gocql.NewCluster(cassandraHost)
-	cluster.Keyspace = "system"
-	cluster.Timeout = 20 * time.Second
-	var session *gocql.Session
-	var err error
-	// Retry loop for Cassandra connection
-	for i := 0; i < 10; i++ {
-		session, err = cluster.CreateSession()
-		if err == nil {
-			break
-		}
-		log.Printf("Cassandra connection attempt %d failed: %v. Retrying in 10s...", i+1, err)
-		time.Sleep(10 * time.Second)
+func (t *PostgresTester) Seed(ctx context.Context) error {
+	createTableSQL := fmt.Sprintf(`
+	CREATE TABLE IF NOT EXISTS %s (
+		id BIGINT PRIMARY KEY,
+		experiment_name TEXT,
+		targeting_rules JSONB
+	)`, tableName)
+	if _, err := t.pool.Exec(ctx, createTableSQL); err != nil {
+		return err
 	}
-	if err != nil {
-		return nil, fmt.Errorf("could not connect to cassandra after multiple retries: %w", err)
-	}
-
-	// FIX: Use double quotes for Go string literal
-	err = session.Query(fmt.Sprintf("CREATE KEYSPACE IF NOT EXISTS %s WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1}", keyspace)).Exec()
-	if err != nil {
-		log.Fatalf("Cassandra CREATE KEYSPACE failed: %v", err)
-	}
-	session.Close()
-
-	cluster.Keyspace = keyspace
-	return cluster.CreateSession()
-}
-
-func seedCassandra() {
-	session, err := connectCassandra()
-	if err != nil {
-		log.Fatalf("Failed to connect to Cassandra: %v", err)
-	}
-	defer session.Close()
-
-	err = session.Query(fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s.%s (
-		experiment_id bigint PRIMARY KEY, 
-		experiment_name text, 
-		targeting_rules text, 
-		buckets text
-	)`, keyspace, tableName)).Exec()
-	if err != nil {
-		log.Fatalf("Cassandra CREATE TABLE failed: %v", err)
-	}
-
-	log.Println("Cassandra: Writing rows...")
-	insertQuery := fmt.Sprintf("INSERT INTO %s (experiment_id, experiment_name, targeting_rules, buckets) VALUES (?, ?, ?, ?)", tableName)
-
+	log.Println("Postgres: Writing rows...")
 	for i := 1; i <= recordCount; i++ {
-		if err := session.Query(insertQuery, int64(i), fmt.Sprintf("Test %d", i), `{"country":"US"}`, `[{"id":0,"share":50}]`).Exec(); err != nil {
-			log.Printf("Warning: Cassandra insert failed for key %d: %v", i, err)
+		rule := ExperimentRule{ID: int64(i), ExperimentName: fmt.Sprintf("Test %d", i), TargetingRules: `{"country":"US"}`}
+		_, err := t.pool.Exec(ctx,
+			fmt.Sprintf("INSERT INTO %s (id, experiment_name, targeting_rules) VALUES ($1, $2, $3) ON CONFLICT (id) DO NOTHING", tableName),
+			rule.ID, rule.ExperimentName, rule.TargetingRules,
+		)
+		if err != nil {
+			log.Printf("Warning: Postgres insert failed for key %d: %v", i, err)
 		}
-		if i%1000 == 0 {
-			log.Printf("Cassandra: %d records inserted...", i)
+		if i%10000 == 0 {
+			log.Printf("Postgres: %d records prepared...", i)
 		}
 	}
+	return nil
 }
-
-func runCassandraTest(ctx context.Context, wg *sync.WaitGroup) {
-	session, err := connectCassandra()
-	if err != nil {
-		log.Fatalf("Failed to connect to Cassandra: %v", err)
-	}
-	defer session.Close()
-	readQuery := fmt.Sprintf("SELECT experiment_id FROM %s WHERE experiment_id = ?", tableName)
-
+func (t *PostgresTester) RunTest(ctx context.Context, wg *sync.WaitGroup) {
+	query := fmt.Sprintf("SELECT id FROM %s WHERE id = $1", tableName)
 	for i := 0; i < workerCount; i++ {
 		wg.Add(1)
 		go func() {
@@ -264,12 +177,82 @@ func runCassandraTest(ctx context.Context, wg *sync.WaitGroup) {
 				case <-ctx.Done():
 					return
 				default:
-					start := time.Now()
 					id := rand.Int63n(recordCount) + 1
-					err := session.Query(readQuery, id).Consistency(gocql.One).Scan(&idRead)
+					start := time.Now()
+					err := t.pool.QueryRow(ctx, query, id).Scan(&idRead)
+					readLatency.WithLabelValues("postgres").Observe(time.Since(start).Seconds())
+					if err != nil {
+						readErrorsTotal.WithLabelValues("postgres").Inc()
+					} else {
+						readsTotal.WithLabelValues("postgres").Inc()
+					}
+				}
+			}
+		}()
+	}
+}
+func (t *PostgresTester) Close() { t.pool.Close() }
+
+// --- Реализация для Cassandra ---
+type CassandraTester struct{ session *gocql.Session }
+
+func NewCassandraTester(ctx context.Context) (*CassandraTester, error) {
+	cluster := gocql.NewCluster(cassandraHost)
+	cluster.Keyspace = "system"
+	cluster.Timeout = 20 * time.Second
+	cluster.ConnectTimeout = connectTimeout
+	session, err := cluster.CreateSession()
+	if err != nil {
+		return nil, fmt.Errorf("initial cassandra connection failed: %w", err)
+	}
+	err = session.Query(fmt.Sprintf("CREATE KEYSPACE IF NOT EXISTS %s WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1}", keyspace)).Exec()
+	session.Close()
+	if err != nil {
+		return nil, fmt.Errorf("cassandra CREATE KEYSPACE failed: %w", err)
+	}
+	cluster.Keyspace = keyspace
+	finalSession, err := cluster.CreateSession()
+	return &CassandraTester{session: finalSession}, err
+}
+func (t *CassandraTester) Seed(ctx context.Context) error {
+	err := t.session.Query(fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s.%s (
+		id bigint PRIMARY KEY,
+		experiment_name text,
+		targeting_rules text
+	)`, keyspace, tableName)).Exec()
+	if err != nil {
+		return err
+	}
+	log.Println("Cassandra: Writing rows...")
+	query := fmt.Sprintf("INSERT INTO %s (id, experiment_name, targeting_rules) VALUES (?, ?, ?)", tableName)
+	for i := 1; i <= recordCount; i++ {
+		rule := ExperimentRule{ID: int64(i), ExperimentName: fmt.Sprintf("Test %d", i), TargetingRules: `{"country":"US"}`}
+		if err := t.session.Query(query, rule.ID, rule.ExperimentName, rule.TargetingRules).Exec(); err != nil {
+			log.Printf("Warning: Cassandra insert failed for key %d: %v", i, err)
+		}
+		if i%10000 == 0 {
+			log.Printf("Cassandra: %d records inserted...", i)
+		}
+	}
+	return nil
+}
+func (t *CassandraTester) RunTest(ctx context.Context, wg *sync.WaitGroup) {
+	query := fmt.Sprintf("SELECT id FROM %s WHERE id = ?", tableName)
+	for i := 0; i < workerCount; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			var idRead int64
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+					id := rand.Int63n(recordCount) + 1
+					start := time.Now()
+					err := t.session.Query(query, id).Consistency(gocql.One).Scan(&idRead)
 					readLatency.WithLabelValues("cassandra").Observe(time.Since(start).Seconds())
 					if err != nil {
-						// gocql.ErrNotFound is a common case, not necessarily a system error
 						if err != gocql.ErrNotFound {
 							log.Printf("Cassandra read error: %v", err)
 						}
@@ -282,3 +265,119 @@ func runCassandraTest(ctx context.Context, wg *sync.WaitGroup) {
 		}()
 	}
 }
+func (t *CassandraTester) Close() { t.session.Close() }
+
+// --- Реализация для MongoDB ---
+type MongoTester struct {
+	client *mongo.Client
+	coll   *mongo.Collection
+}
+
+func NewMongoTester(ctx context.Context) (*MongoTester, error) {
+	client, err := mongo.Connect(ctx, options.Client().ApplyURI(mongoURI))
+	if err != nil {
+		return nil, err
+	}
+	coll := client.Database(keyspace).Collection(tableName)
+	return &MongoTester{client: client, coll: coll}, nil
+}
+func (t *MongoTester) Seed(ctx context.Context) error {
+	log.Println("MongoDB: Writing rows...")
+	var models []mongo.WriteModel
+	for i := 1; i <= recordCount; i++ {
+		rule := ExperimentRule{ID: int64(i), ExperimentName: fmt.Sprintf("Test %d", i), TargetingRules: `{"country":"US"}`}
+		models = append(models, mongo.NewInsertOneModel().SetDocument(rule))
+		if i%10000 == 0 || i == recordCount {
+			_, err := t.coll.BulkWrite(ctx, models)
+			if err != nil {
+				log.Printf("Warning: Mongo bulk write failed: %v", err)
+			}
+			log.Printf("MongoDB: %d records prepared...", i)
+			models = nil // reset batch
+		}
+	}
+	return nil
+}
+func (t *MongoTester) RunTest(ctx context.Context, wg *sync.WaitGroup) {
+	for i := 0; i < workerCount; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			var result ExperimentRule
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+					id := rand.Int63n(recordCount) + 1
+					filter := bson.M{"_id": id}
+					start := time.Now()
+					err := t.coll.FindOne(ctx, filter).Decode(&result)
+					readLatency.WithLabelValues("mongo").Observe(time.Since(start).Seconds())
+					if err != nil {
+						if err != mongo.ErrNoDocuments {
+							log.Printf("Mongo read error: %v", err)
+						}
+						readErrorsTotal.WithLabelValues("mongo").Inc()
+					} else {
+						readsTotal.WithLabelValues("mongo").Inc()
+					}
+				}
+			}
+		}()
+	}
+}
+func (t *MongoTester) Close() { t.client.Disconnect(context.Background()) }
+
+// --- Реализация для etcd ---
+type EtcdTester struct{ client *clientv3.Client }
+
+func NewEtcdTester(ctx context.Context) (*EtcdTester, error) {
+	client, err := clientv3.New(clientv3.Config{
+		Endpoints:   []string{etcdURI},
+		DialTimeout: connectTimeout,
+	})
+	return &EtcdTester{client: client}, err
+}
+func (t *EtcdTester) Seed(ctx context.Context) error {
+	log.Println("etcd: Writing rows...")
+	for i := 1; i <= recordCount; i++ {
+		rule := ExperimentRule{ID: int64(i), ExperimentName: fmt.Sprintf("Test %d", i), TargetingRules: `{"country":"US"}`}
+		key := fmt.Sprintf("/experiments/%d", rule.ID)
+		val, _ := json.Marshal(rule)
+		_, err := t.client.Put(ctx, key, string(val))
+		if err != nil {
+			log.Printf("Warning: etcd put failed for key %s: %v", key, err)
+		}
+		if i%10000 == 0 {
+			log.Printf("etcd: %d records inserted...", i)
+		}
+	}
+	return nil
+}
+func (t *EtcdTester) RunTest(ctx context.Context, wg *sync.WaitGroup) {
+	for i := 0; i < workerCount; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+					id := rand.Int63n(recordCount) + 1
+					key := fmt.Sprintf("/experiments/%d", id)
+					start := time.Now()
+					_, err := t.client.Get(ctx, key)
+					readLatency.WithLabelValues("etcd").Observe(time.Since(start).Seconds())
+					if err != nil {
+						readErrorsTotal.WithLabelValues("etcd").Inc()
+					} else {
+						readsTotal.WithLabelValues("etcd").Inc()
+					}
+				}
+			}
+		}()
+	}
+}
+func (t *EtcdTester) Close() { t.client.Close() }
