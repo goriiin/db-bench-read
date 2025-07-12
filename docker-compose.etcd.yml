@@ -52,6 +52,8 @@ services:
         condition: service_started
     environment:
       - CONFIG_PATH=/app/config.yaml
+    ports:
+      - "8081:8081"
 
 volumes:
   etcddata:

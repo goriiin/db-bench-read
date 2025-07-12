@@ -4,9 +4,12 @@ import (
 	"context"
 	"db-bench/lib"
 	"db-bench/lib/conf"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"log"
+	"net/http"
 	"os"
 	"sync"
+	"time"
 )
 
 func main() {
@@ -15,6 +18,14 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
+
+	go func() {
+		http.Handle("/metrics", promhttp.Handler())
+		log.Fatal(http.ListenAndServe(":8080", nil))
+	}()
+
+	time.Sleep(2 * time.Second)
+
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.TestDuration)
 	defer cancel()
 	tester, err := lib.GetTester("cassandra", cfg)
@@ -23,7 +34,14 @@ func main() {
 	}
 	defer tester.Close()
 	var wg sync.WaitGroup
+	startTime := time.Now()
+
 	tester.RunTest(ctx, &wg)
 	wg.Wait()
-	log.Println("Test for cassandra completed.")
+	log.Println("Test for postgres completed.")
+
+	duration := time.Since(startTime)
+	log.Printf("Test completed. Duration: %v", duration)
+
+	time.Sleep(10 * time.Second)
 }

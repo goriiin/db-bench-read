@@ -45,6 +45,8 @@ services:
     network_mode: bridge
     environment:
       - CONFIG_PATH=/app/config.yaml
+    ports:
+      - "8081:8081"
 volumes:
   mongodata:
   prometheus_data:
