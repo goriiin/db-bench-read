@@ -3,7 +3,7 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY lib/ ./lib/
-COPY db_etcd_test/read/main.go ./main.go
+COPY db_postgres_test/read/main.go ./main.go
 COPY config.yaml ./
 RUN go build -o read main.go
 

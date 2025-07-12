@@ -3,12 +3,12 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY lib/ ./lib/
-COPY db_etcd_test/read/main.go ./main.go
+COPY db_postgres_test/seed/main.go ./main.go
 COPY config.yaml ./
-RUN go build -o read main.go
+RUN go build -o seed main.go
 
 FROM alpine:latest
 WORKDIR /app
-COPY --from=builder /app/read ./read
+COPY --from=builder /app/seed ./seed
 COPY config.yaml ./
-CMD ["./read"]
+CMD ["./seed"]

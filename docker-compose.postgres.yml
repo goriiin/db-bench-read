@@ -12,8 +12,8 @@ services:
       - pgdata:/var/lib/postgresql/data
   seed_go:
     build:
-      context: ./db_postgres_test/seed
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./db_postgres_test/seed/Dockerfile
     depends_on:
       - postgres-db
     network_mode: bridge
@@ -21,8 +21,8 @@ services:
       - CONFIG_PATH=/app/config.yaml
   read_go:
     build:
-      context: ./db_postgres_test/read
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./db_postgres_test/read/Dockerfile
     depends_on:
       - postgres-db
     network_mode: bridge

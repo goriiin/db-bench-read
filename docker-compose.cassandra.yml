@@ -8,8 +8,8 @@ services:
       - cassdata:/var/lib/cassandra
   seed_go:
     build:
-      context: ./db_cassandra_test/seed
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./db_cassandra_test/seed/Dockerfile
     depends_on:
       - cassandra-db
     network_mode: bridge
@@ -17,8 +17,8 @@ services:
       - CONFIG_PATH=/app/config.yaml
   read_go:
     build:
-      context: ./db_cassandra_test/read
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./db_cassandra_test/read/Dockerfile
     depends_on:
       - cassandra-db
     network_mode: bridge
