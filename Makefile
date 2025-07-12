@@ -30,7 +30,7 @@ run-postgres-seed:
 run-postgres-read:
 	docker compose -f docker-compose.postgres.yml build read_go
 	docker compose -f docker-compose.postgres.yml up -d postgres
-	docker compose -f docker-compose.postgres.yml up read_go
+	docker compose -f docker-compose.postgres.yml up
 
 run-cassandra-seed:
 	docker compose -f docker-compose.cassandra.yml build seed_go
@@ -40,7 +40,7 @@ run-cassandra-seed:
 run-cassandra-read:
 	docker compose -f docker-compose.cassandra.yml build read_go
 	docker compose -f docker-compose.cassandra.yml up -d cassandra-db
-	docker compose -f docker-compose.cassandra.yml up read_go
+	docker compose -f docker-compose.cassandra.yml up
 
 run-mongo-seed:
 	docker compose -f docker-compose.mongo.yml build seed_go
@@ -50,7 +50,7 @@ run-mongo-seed:
 run-mongo-read:
 	docker compose -f docker-compose.mongo.yml build read_go
 	docker compose -f docker-compose.mongo.yml up -d mongo-db
-	docker compose -f docker-compose.mongo.yml up read_go
+	docker compose -f docker-compose.mongo.yml up
 
 run-etcd-seed:
 	docker compose -f docker-compose.etcd.yml build seed_go
@@ -60,4 +60,4 @@ run-etcd-seed:
 run-etcd-read:
 	docker compose -f docker-compose.etcd.yml build read_go
 	docker compose -f docker-compose.etcd.yml up -d etcd-db
-	docker compose -f docker-compose.etcd.yml up read_go
+	docker compose -f docker-compose.etcd.yml up
