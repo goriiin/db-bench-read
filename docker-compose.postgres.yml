@@ -10,10 +10,19 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-  tester:
+  seed_go:
     build:
-      context: .
-      dockerfile: Dockerfile.postgres
+      context: ./db_postgres_test/seed
+      dockerfile: Dockerfile
+    depends_on:
+      - postgres-db
+    network_mode: bridge
+    environment:
+      - CONFIG_PATH=/app/config.yaml
+  read_go:
+    build:
+      context: ./db_postgres_test/read
+      dockerfile: Dockerfile
     depends_on:
       - postgres-db
     network_mode: bridge

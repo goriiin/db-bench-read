@@ -10,19 +10,19 @@ services:
       - ETCD_DATA_DIR=/etcd-data
       - ALLOW_NONE_AUTHENTICATION=yes
       - ETCD_ENABLE_V2=true
-  tester-seed:
+  seed_go:
     build:
-      context: ../..
-      dockerfile: db_etcd_test/seed/Dockerfile
+      context: ./db_etcd_test/seed
+      dockerfile: Dockerfile
     depends_on:
       - etcd-db
     network_mode: bridge
     environment:
       - CONFIG_PATH=/app/config.yaml
-  tester-read:
+  read_go:
     build:
-      context: ../..
-      dockerfile: db_etcd_test/read/Dockerfile
+      context: ./db_etcd_test/read
+      dockerfile: Dockerfile
     depends_on:
       - etcd-db
     network_mode: bridge

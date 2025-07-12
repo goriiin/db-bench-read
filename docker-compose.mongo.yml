@@ -6,19 +6,19 @@ services:
       - "27017:27017"
     volumes:
       - mongodata:/data/db
-  tester-seed:
+  seed_go:
     build:
-      context: ../..
-      dockerfile: db_mongo_test/seed/Dockerfile
+      context: ./db_mongo_test/seed
+      dockerfile: Dockerfile
     depends_on:
       - mongo-db
     network_mode: bridge
     environment:
       - CONFIG_PATH=/app/config.yaml
-  tester-read:
+  read_go:
     build:
-      context: ../..
-      dockerfile: db_mongo_test/read/Dockerfile
+      context: ./db_mongo_test/read
+      dockerfile: Dockerfile
     depends_on:
       - mongo-db
     network_mode: bridge
