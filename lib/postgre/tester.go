@@ -8,14 +8,15 @@ import (
 
 type PostgresTester struct {
 	pool *pgxpool.Pool
-	conf conf.Config
+	cfg  *conf.Config
 }
 
-func NewPostgresTester(ctx context.Context, uri string, dbName string) (*PostgresTester, error) {
-	pool, err := pgxpool.New(ctx, uri)
+func NewPostgresTester(ctx context.Context, cfg *conf.Config) (*PostgresTester, error) {
+	pool, err := pgxpool.New(ctx, cfg.URI)
 	if err != nil {
 		return nil, err
 	}
-
-	return &PostgresTester{pool: pool, dbName: dbName}, nil
+	return &PostgresTester{pool: pool, cfg: cfg}, nil
 }
+
+func (t *PostgresTester) Close() { t.pool.Close() }

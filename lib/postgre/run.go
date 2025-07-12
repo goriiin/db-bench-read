@@ -10,9 +10,9 @@ import (
 )
 
 func (t *PostgresTester) RunTest(ctx context.Context, wg *sync.WaitGroup) {
-	log.Printf("RunTest db %s", t.dbName)
-	query := fmt.Sprintf("SELECT id FROM %s WHERE id = $1", t.tableName)
-	for i := 0; i < workerCount; i++ {
+	log.Printf("RunTest db %s", t.cfg.DBName)
+	query := fmt.Sprintf("SELECT id FROM %s WHERE id = $1", t.cfg.TableName)
+	for i := 0; i < t.cfg.WorkerCount; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -22,15 +22,14 @@ func (t *PostgresTester) RunTest(ctx context.Context, wg *sync.WaitGroup) {
 				case <-ctx.Done():
 					return
 				default:
-					id := rand.Int63n(recordCount) + 1
+					id := rand.Int63n(int64(t.cfg.RecordCount)) + 1
 					start := time.Now()
 					err := t.pool.QueryRow(ctx, query, id).Scan(&idRead)
-					// ИЗМЕНЕНИЕ: Используется поле dbName вместо строки "postgres"
-					readLatency.WithLabelValues(t.dbName).Observe(time.Since(start).Seconds())
+					t.cfg.ReadLatency.WithLabelValues(t.cfg.DBName).Observe(time.Since(start).Seconds())
 					if err != nil {
-						readErrorsTotal.WithLabelValues(t.dbName).Inc()
+						t.cfg.ReadErrorsTotal.WithLabelValues(t.cfg.DBName).Inc()
 					} else {
-						readsTotal.WithLabelValues(t.dbName).Inc()
+						t.cfg.ReadsTotal.WithLabelValues(t.cfg.DBName).Inc()
 					}
 				}
 			}
