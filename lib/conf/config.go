@@ -10,6 +10,7 @@ import (
 )
 
 type Config struct {
+	DB              string
 	URI             string
 	DBName          string
 	WorkerCount     int
@@ -60,6 +61,7 @@ func LoadConfig(db string, configPath string) (*Config, error) {
 	connectTimeout := v.GetDuration("connectTimeout")
 
 	cfg := &Config{
+		DB:             db,
 		URI:            uri,
 		DBName:         dbName,
 		WorkerCount:    workerCount,

@@ -25,11 +25,11 @@ func (t *PostgresTester) RunTest(ctx context.Context, wg *sync.WaitGroup) {
 					id := rand.Int63n(int64(t.cfg.RecordCount)) + 1
 					start := time.Now()
 					err := t.pool.QueryRow(ctx, query, id).Scan(&idRead)
-					t.cfg.ReadLatency.WithLabelValues(t.cfg.DBName).Observe(time.Since(start).Seconds())
+					t.cfg.ReadLatency.WithLabelValues(t.cfg.DB).Observe(time.Since(start).Seconds())
 					if err != nil {
-						t.cfg.ReadErrorsTotal.WithLabelValues(t.cfg.DBName).Inc()
+						t.cfg.ReadErrorsTotal.WithLabelValues(t.cfg.DB).Inc()
 					} else {
-						t.cfg.ReadsTotal.WithLabelValues(t.cfg.DBName).Inc()
+						t.cfg.ReadsTotal.WithLabelValues(t.cfg.DB).Inc()
 					}
 				}
 			}

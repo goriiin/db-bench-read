@@ -23,11 +23,11 @@ func (t *CassandraTester) RunTest(ctx context.Context, wg *sync.WaitGroup) {
 					id := int64(time.Now().UnixNano())%int64(t.cfg.RecordCount) + 1
 					start := time.Now()
 					err := t.session.Query(query, id).Consistency(gocql.One).Scan(&idRead)
-					t.cfg.ReadLatency.WithLabelValues(t.cfg.DBName).Observe(time.Since(start).Seconds())
+					t.cfg.ReadLatency.WithLabelValues(t.cfg.DB).Observe(time.Since(start).Seconds())
 					if err != nil {
-						t.cfg.ReadErrorsTotal.WithLabelValues(t.cfg.DBName).Inc()
+						t.cfg.ReadErrorsTotal.WithLabelValues(t.cfg.DB).Inc()
 					} else {
-						t.cfg.ReadsTotal.WithLabelValues(t.cfg.DBName).Inc()
+						t.cfg.ReadsTotal.WithLabelValues(t.cfg.DB).Inc()
 					}
 				}
 			}
