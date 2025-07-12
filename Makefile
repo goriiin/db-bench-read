@@ -2,10 +2,7 @@
         seed-postgres seed-cassandra seed-mongo seed-etcd \
         test-postgres test-cassandra test-mongo test-etcd
 
-prune:
-	@echo "Stopping and removing project containers..."
-	docker compose down --volumes
-	@echo "Pruning Docker system..."
+prune: down
 	docker system prune -a -f --volumes
 
 up:
