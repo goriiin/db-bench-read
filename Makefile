@@ -29,7 +29,7 @@ run-postgres-seed:
 
 run-postgres-read:
 	docker compose -f docker-compose.postgres.yml build read_go
-	docker compose -f docker-compose.postgres.yml up -d postgres-db
+	docker compose -f docker-compose.postgres.yml up -d postgres
 	docker compose -f docker-compose.postgres.yml up read_go
 
 run-cassandra-seed:
