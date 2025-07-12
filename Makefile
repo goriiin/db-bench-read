@@ -16,77 +16,45 @@ down:
 	@echo "Stopping project services..."
 	docker compose down --volumes
 
-seed-postgres: up
-	@echo "Seeding PostgreSQL..."
-	go run db_postgres_test/seed/main.go
-
-seed-cassandra: up
-	@echo "Seeding Cassandra..."
-	go run db_cassandra_test/seed/main.go
-
-seed-mongo: up
-	@echo "Seeding MongoDB..."
-	go run db_mongo_test/seed/main.go
-
-seed-etcd: up
-	@echo "Seeding etcd..."
-	go run db_etcd_test/seed/main.go
-
-test-postgres:
-	@echo "Starting PostgreSQL read test. View results at http://localhost:3000"
-	go run db_postgres_test/read/main.go
-
-test-cassandra:
-	@echo "Starting Cassandra read test. View results at http://localhost:3000"
-	go run db_cassandra_test/read/main.go
-
-test-mongo:
-	@echo "Starting MongoDB read test. View results at http://localhost:3000"
-	go run db_mongo_test/read/main.go
-
-test-etcd:
-	@echo "Starting etcd read test. View results at http://localhost:3000"
-	go run db_etcd_test/read/main.go
-
 logs:
 	docker compose logs -f tester
 
 run-postgres-seed:
-	docker compose -f docker-compose.postgres.yml build tester-seed
+	docker compose -f docker-compose.postgres.yml build seed_go
 	docker compose -f docker-compose.postgres.yml up -d postgres-db
-	docker compose -f docker-compose.postgres.yml up tester-seed
+	docker compose -f docker-compose.postgres.yml up seed_go
 
 run-postgres-read:
-	docker compose -f docker-compose.postgres.yml build tester-read
+	docker compose -f docker-compose.postgres.yml build read_go
 	docker compose -f docker-compose.postgres.yml up -d postgres-db
-	docker compose -f docker-compose.postgres.yml up tester-read
+	docker compose -f docker-compose.postgres.yml up read_go
 
 run-cassandra-seed:
-	docker compose -f docker-compose.cassandra.yml build tester-seed
+	docker compose -f docker-compose.cassandra.yml build seed_go
 	docker compose -f docker-compose.cassandra.yml up -d cassandra-db
-	docker compose -f docker-compose.cassandra.yml up tester-seed
+	docker compose -f docker-compose.cassandra.yml up seed_go
 
 run-cassandra-read:
-	docker compose -f docker-compose.cassandra.yml build tester-read
+	docker compose -f docker-compose.cassandra.yml build read_go
 	docker compose -f docker-compose.cassandra.yml up -d cassandra-db
-	docker compose -f docker-compose.cassandra.yml up tester-read
+	docker compose -f docker-compose.cassandra.yml up read_go
 
 run-mongo-seed:
-	docker compose -f docker-compose.mongo.yml build tester-seed
+	docker compose -f docker-compose.mongo.yml build seed_go
 	docker compose -f docker-compose.mongo.yml up -d mongo-db
-	docker compose -f docker-compose.mongo.yml up tester-seed
+	docker compose -f docker-compose.mongo.yml up seed_go
 
 run-mongo-read:
-	docker compose -f docker-compose.mongo.yml build tester-read
+	docker compose -f docker-compose.mongo.yml build read_go
 	docker compose -f docker-compose.mongo.yml up -d mongo-db
-	docker compose -f docker-compose.mongo.yml up tester-read
+	docker compose -f docker-compose.mongo.yml up read_go
 
 run-etcd-seed:
-	docker compose -f docker-compose.etcd.yml build tester-seed
+	docker compose -f docker-compose.etcd.yml build seed_go
 	docker compose -f docker-compose.etcd.yml up -d etcd-db
-	docker compose -f docker-compose.etcd.yml up tester-seed
+	docker compose -f docker-compose.etcd.yml up seed_go
 
 run-etcd-read:
-	docker compose -f docker-compose.etcd.yml build tester-read
+	docker compose -f docker-compose.etcd.yml build read_go
 	docker compose -f docker-compose.etcd.yml up -d etcd-db
-	docker compose -f docker-compose.etcd.yml up tester-read
+	docker compose -f docker-compose.etcd.yml up read_go
