@@ -1,0 +1,21 @@
+version: '3.8'
+services:
+  cassandra-db:
+    image: cassandra:4.1
+    environment:
+      CASSANDRA_CLUSTER_NAME: ab_tests
+    ports:
+      - "9042:9042"
+    volumes:
+      - cassdata:/var/lib/cassandra
+  tester:
+    build:
+      context: .
+      dockerfile: Dockerfile.cassandra
+    depends_on:
+      - cassandra-db
+    network_mode: bridge
+    environment:
+      - CONFIG_PATH=/app/config.yaml
+volumes:
+  cassdata:

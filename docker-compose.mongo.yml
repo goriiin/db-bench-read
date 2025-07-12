@@ -1,0 +1,28 @@
+version: '3.8'
+services:
+  mongo-db:
+    image: mongo:6
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodata:/data/db
+  tester-seed:
+    build:
+      context: ../..
+      dockerfile: db_mongo_test/seed/Dockerfile
+    depends_on:
+      - mongo-db
+    network_mode: bridge
+    environment:
+      - CONFIG_PATH=/app/config.yaml
+  tester-read:
+    build:
+      context: ../..
+      dockerfile: db_mongo_test/read/Dockerfile
+    depends_on:
+      - mongo-db
+    network_mode: bridge
+    environment:
+      - CONFIG_PATH=/app/config.yaml
+volumes:
+  mongodata:

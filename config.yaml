@@ -1,0 +1,20 @@
+
+
+workerCount: 100
+recordCount: 100000
+testDuration: 10m
+connectTimeout: 15s
+tableName: experiment_rules
+
+postgres:
+  uri: "postgres://user:password@postgres-db:5432/ab_tests"
+  dbName: "ab_tests"
+cassandra:
+  uri: "cassandra-db:9042"
+  dbName: "ab_tests"
+mongo:
+  uri: "mongodb://mongo-db:27017"
+  dbName: "ab_tests"
+etcd:
+  uri: "http://etcd-db:2379"
+  dbName: "etcd"

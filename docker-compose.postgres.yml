@@ -1,0 +1,23 @@
+version: '3.8'
+services:
+  postgres-db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: ab_tests
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+  tester:
+    build:
+      context: .
+      dockerfile: Dockerfile.postgres
+    depends_on:
+      - postgres-db
+    network_mode: bridge
+    environment:
+      - CONFIG_PATH=/app/config.yaml
+volumes:
+  pgdata:
