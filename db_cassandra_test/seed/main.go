@@ -2,17 +2,22 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"os"
 
 	"db-bench/lib"
 	"db-bench/lib/conf"
 )
 
 func main() {
-	cfg, err := conf.LoadConfig("")
+	configPath := os.Getenv("CONFIG_PATH")
+	cfg, err := conf.LoadConfig("cassandra", configPath)
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
+
+	fmt.Println(cfg)
 	tester, err := lib.GetTester("cassandra", cfg)
 	if err != nil {
 		log.Fatalf("Failed to initialize cassandra tester: %v", err)

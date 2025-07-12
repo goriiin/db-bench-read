@@ -5,10 +5,12 @@ import (
 	"db-bench/lib"
 	"db-bench/lib/conf"
 	"log"
+	"os"
 )
 
 func main() {
-	cfg, err := conf.LoadConfig("")
+	configPath := os.Getenv("CONFIG_PATH")
+	cfg, err := conf.LoadConfig("postgres", configPath)
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}

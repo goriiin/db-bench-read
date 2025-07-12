@@ -1,28 +1,55 @@
-version: '3.8'
 services:
   cassandra-db:
     image: cassandra:4
+    container_name: cassandra-db
     ports:
       - "9042:9042"
     volumes:
       - cassdata:/var/lib/cassandra
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - prometheus_data:/prometheus
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/grafana.ini:/etc/grafana/grafana.ini
+    restart: unless-stopped
+
   seed_go:
+    container_name: seed_go
     build:
       context: .
       dockerfile: ./db_cassandra_test/seed/Dockerfile
     depends_on:
-      - cassandra-db
-    network_mode: bridge
+      cassandra-db:
+        condition: service_started
     environment:
       - CONFIG_PATH=/app/config.yaml
+
   read_go:
+    container_name: read_go
     build:
       context: .
       dockerfile: ./db_cassandra_test/read/Dockerfile
     depends_on:
-      - cassandra-db
-    network_mode: bridge
+      cassandra-db:
+        condition: service_started
     environment:
       - CONFIG_PATH=/app/config.yaml
+
 volumes:
   cassdata:
+  prometheus_data:
+  grafana_data:

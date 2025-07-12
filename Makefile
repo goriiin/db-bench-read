@@ -14,14 +14,17 @@ up:
 
 down:
 	@echo "Stopping project services..."
-	docker compose down --volumes
+	docker compose -f docker-compose.postgres.yml down
+	docker compose -f docker-compose.cassandra.yml down
+	docker compose -f docker-compose.mongo.yml down
+	docker compose -f docker-compose.etcd.yml down
 
 logs:
 	docker compose logs -f tester
 
 run-postgres-seed:
 	docker compose -f docker-compose.postgres.yml build seed_go
-	docker compose -f docker-compose.postgres.yml up -d postgres-db
+	docker compose -f docker-compose.postgres.yml up -d postgres
 	docker compose -f docker-compose.postgres.yml up seed_go
 
 run-postgres-read:

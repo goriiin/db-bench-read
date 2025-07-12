@@ -3,13 +3,15 @@ package main
 import (
 	"context"
 	"log"
+	"os"
 
 	"db-bench/lib"
 	"db-bench/lib/conf"
 )
 
 func main() {
-	cfg, err := conf.LoadConfig("")
+	configPath := os.Getenv("CONFIG_PATH")
+	cfg, err := conf.LoadConfig("etcd", configPath)
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}

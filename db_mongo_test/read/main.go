@@ -5,11 +5,13 @@ import (
 	"db-bench/lib"
 	"db-bench/lib/conf"
 	"log"
+	"os"
 	"sync"
 )
 
 func main() {
-	cfg, err := conf.LoadConfig("")
+	configPath := os.Getenv("CONFIG_PATH")
+	cfg, err := conf.LoadConfig("mongo", configPath)
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}

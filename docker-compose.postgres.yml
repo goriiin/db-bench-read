@@ -1,32 +1,64 @@
-version: '3.8'
 services:
-  postgres-db:
-    image: postgres:15
-    environment:
-      POSTGRES_DB: ab_tests
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres-db
     ports:
       - "5432:5432"
+    environment:
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=ab_tests
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U user -d ab_tests" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - prometheus_data:/prometheus
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/grafana.ini:/etc/grafana/grafana.ini
+    restart: unless-stopped
+
   seed_go:
+    container_name: seed_go
     build:
       context: .
       dockerfile: ./db_postgres_test/seed/Dockerfile
     depends_on:
-      - postgres-db
-    network_mode: bridge
+      postgres:
+        condition: service_healthy
     environment:
       - CONFIG_PATH=/app/config.yaml
+
   read_go:
+    container_name: read_go
     build:
       context: .
       dockerfile: ./db_postgres_test/read/Dockerfile
     depends_on:
-      - postgres-db
-    network_mode: bridge
+      postgres:
+        condition: service_healthy
     environment:
       - CONFIG_PATH=/app/config.yaml
+
 volumes:
-  pgdata:
+  postgres_data:
+  prometheus_data:
+  grafana_data:

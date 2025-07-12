@@ -1,7 +1,7 @@
-version: '3.8'
 services:
   etcd-db:
     image: quay.io/coreos/etcd:v3.5.0
+    container_name: etcd-db
     ports:
       - "2379:2379"
     volumes:
@@ -10,23 +10,50 @@ services:
       - ETCD_DATA_DIR=/etcd-data
       - ALLOW_NONE_AUTHENTICATION=yes
       - ETCD_ENABLE_V2=true
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - prometheus_data:/prometheus
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/grafana.ini:/etc/grafana/grafana.ini
+    restart: unless-stopped
+
   seed_go:
+    container_name: seed_go
     build:
       context: .
       dockerfile: ./db_etcd_test/seed/Dockerfile
     depends_on:
-      - etcd-db
-    network_mode: bridge
+      etcd-db:
+        condition: service_started
     environment:
       - CONFIG_PATH=/app/config.yaml
+
   read_go:
+    container_name: read_go
     build:
       context: .
       dockerfile: ./db_etcd_test/read/Dockerfile
     depends_on:
-      - etcd-db
-    network_mode: bridge
+      etcd-db:
+        condition: service_started
     environment:
       - CONFIG_PATH=/app/config.yaml
+
 volumes:
   etcddata:
+  prometheus_data:
+  grafana_data:

@@ -1,20 +1,41 @@
-version: '3.8'
 services:
   mongo-db:
+    container_name: mongo-db
     image: mongo:6
     ports:
       - "27017:27017"
     volumes:
       - mongodata:/data/db
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - prometheus_data:/prometheus
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/grafana.ini:/etc/grafana/grafana.ini
+    restart: unless-stopped
+
   seed_go:
     build:
       context: .
       dockerfile: ./db_mongo_test/seed/Dockerfile
     depends_on:
       - mongo-db
-    network_mode: bridge
     environment:
       - CONFIG_PATH=/app/config.yaml
+
   read_go:
     build:
       context: .
@@ -26,3 +47,5 @@ services:
       - CONFIG_PATH=/app/config.yaml
 volumes:
   mongodata:
+  prometheus_data:
+  grafana_data:
