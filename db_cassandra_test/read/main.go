@@ -21,7 +21,7 @@ func main() {
 
 	go func() {
 		http.Handle("/metrics", promhttp.Handler())
-		log.Fatal(http.ListenAndServe(":8080", nil))
+		log.Fatal(http.ListenAndServe(":8081", nil))
 	}()
 
 	time.Sleep(2 * time.Second)
