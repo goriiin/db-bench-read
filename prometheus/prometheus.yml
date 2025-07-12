@@ -5,4 +5,4 @@ global:
 scrape_configs:
   - job_name: 'benchmark_tester'
     static_configs:
-      - targets: ['go-tester:8081']
+      - targets: ['read_go:8081']
