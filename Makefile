@@ -67,26 +67,26 @@ run-etcd-read:
 
 run-mysql-seed:
 	docker compose -f docker-compose.mysql.yml build seed_go
-	docker compose -f docker-compose.mysql.yml up -d mysql-db
+	docker compose -f docker-compose.mysql.yml up -d mysql
 	docker compose -f docker-compose.mysql.yml up -d
 	docker compose -f docker-compose.mysql.yml up seed_go
 
 run-mysql-read:
 	docker compose -f docker-compose.mysql.yml build read_go
-	docker compose -f docker-compose.mysql.yml up -d mysql-db
+	docker compose -f docker-compose.mysql.yml up -d mysql
 	docker compose -f docker-compose.mysql.yml up -d
 	docker compose -f docker-compose.mysql.yml up read_go
 
 
 run-ydb-seed:
 	docker compose -f docker-compose.ydb.yml build seed_go
-	docker compose -f docker-compose.ydb.yml up -d ydb-db
+	docker compose -f docker-compose.ydb.yml up -d ydb
 	docker compose -f docker-compose.ydb.yml up -d
 	docker compose -f docker-compose.ydb.yml up seed_go
 
 run-ydb-read:
 	docker compose -f docker-compose.ydb.yml build read_go
-	docker compose -f docker-compose.ydb.yml up -d ydb-db
+	docker compose -f docker-compose.ydb.yml up -d ydb
 	docker compose -f docker-compose.ydb.yml up -d
 	docker compose -f docker-compose.ydb.yml up read_go
 
