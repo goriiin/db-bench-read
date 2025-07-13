@@ -43,7 +43,7 @@ services:
       context: .
       dockerfile: ./db_mysql_test/seed/Dockerfile
     depends_on:
-      postgres:
+      mysql:
         condition: service_healthy
     environment:
       - CONFIG_PATH=/app/config.yaml
@@ -54,7 +54,7 @@ services:
       context: .
       dockerfile: ./db_mysql_test/read/Dockerfile
     depends_on:
-      postgres:
+      mysql:
         condition: service_healthy
     environment:
       - CONFIG_PATH=/app/config.yaml
