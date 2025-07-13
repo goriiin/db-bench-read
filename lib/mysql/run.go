@@ -12,7 +12,6 @@ import (
 func (t *MySQLTester) RunTest(ctx context.Context, wg *sync.WaitGroup) {
 	log.Printf("RunTest db %s", t.cfg.DBName)
 
-	// Prepare statement for better performance
 	query := fmt.Sprintf("SELECT id FROM %s WHERE id = ?", t.cfg.TableName)
 
 	for i := 0; i < t.cfg.WorkerCount; i++ {

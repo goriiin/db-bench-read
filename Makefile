@@ -45,23 +45,23 @@ run-cassandra-read:
 
 run-mongo-seed:
 	docker compose -f docker-compose.mongo.yml build seed_go
-	docker compose -f docker-compose.mongo.yml up -d mongo-db
+	docker compose -f docker-compose.mongo.yml up -d mongo
 	docker compose -f docker-compose.mongo.yml up seed_go
 
 run-mongo-read:
 	docker compose -f docker-compose.mongo.yml build read_go
-	docker compose -f docker-compose.mongo.yml up -d mongo-db
+	docker compose -f docker-compose.mongo.yml up -d mongo
 	docker compose -f docker-compose.mongo.yml up -d
 	docker compose -f docker-compose.mongo.yml up read_go
 
 run-etcd-seed:
 	docker compose -f docker-compose.etcd.yml build seed_go
-	docker compose -f docker-compose.etcd.yml up -d etcd-db
+	docker compose -f docker-compose.etcd.yml up -d etcd
 	docker compose -f docker-compose.etcd.yml up seed_go
 
 run-etcd-read:
 	docker compose -f docker-compose.etcd.yml build read_go
-	docker compose -f docker-compose.etcd.yml up -d etcd-db
+	docker compose -f docker-compose.etcd.yml up -d etcd
 	docker compose -f docker-compose.etcd.yml up -d
 	docker compose -f docker-compose.etcd.yml up read_go
 
