@@ -1,0 +1,12 @@
+services:
+  ydb:
+    image: ydbplatform/local-ydb:latest
+    container_name: ydb-db
+    volumes:
+      - ydb_data:/ydb_data
+      - ydb_certs:/ydb_certs
+    entrypoint: tail -f /dev/null
+
+volumes:
+  ydb_data:
+  ydb_certs:
