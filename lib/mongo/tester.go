@@ -3,35 +3,44 @@ package mongo
 import (
 	"context"
 	"db-bench/lib/conf"
-	"sync"
 
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 type MongoTester struct {
-	coll   *mongo.Collection
-	client *mongo.Client
-	cfg    *conf.Config
+	client     *mongo.Client
+	collection *mongo.Collection
+	cfg        *conf.Config
 }
 
 func NewMongoTester(ctx context.Context, cfg *conf.Config) (*MongoTester, error) {
-	client, err := mongo.Connect(ctx, options.Client().ApplyURI(cfg.URI))
+	clientOptions := options.Client().ApplyURI(cfg.URI)
+	client, err := mongo.Connect(ctx, clientOptions)
 	if err != nil {
 		return nil, err
 	}
-	coll := client.Database(cfg.DBName).Collection(cfg.TableName)
-	return &MongoTester{client: client, coll: coll, cfg: cfg}, nil
-}
 
-func (t *MongoTester) Seed(ctx context.Context) error {
-	return SeedMongo(ctx, t.coll, t.cfg.RecordCount)
-}
+	// Test connection
+	err = client.Ping(ctx, nil)
+	if err != nil {
+		client.Disconnect(ctx)
+		return nil, err
+	}
 
-func (t *MongoTester) RunTest(ctx context.Context, wg *sync.WaitGroup) {
-	RunMongoRead(ctx, t.coll, t.cfg.DBName, t.cfg.RecordCount, t.cfg.WorkerCount, t.cfg.ReadsTotal, t.cfg.ReadErrorsTotal, t.cfg.ReadLatency)
+	db := client.Database(cfg.DBName)
+	collection := db.Collection(cfg.TableName)
+
+	return &MongoTester{
+		client:     client,
+		collection: collection,
+		cfg:        cfg,
+	}, nil
 }
 
 func (t *MongoTester) Close() {
-	_ = t.client.Disconnect(context.Background())
+	if t.client != nil {
+		ctx := context.Background()
+		t.client.Disconnect(ctx)
+	}
 }

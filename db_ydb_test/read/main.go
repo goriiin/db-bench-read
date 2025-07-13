@@ -14,7 +14,7 @@ import (
 
 func main() {
 	configPath := os.Getenv("CONFIG_PATH")
-	cfg, err := conf.LoadConfig("etcd", configPath)
+	cfg, err := conf.LoadConfig("ydb", configPath)
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
@@ -29,9 +29,9 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.TestDuration)
 	defer cancel()
 
-	tester, err := lib.GetTester("etcd", cfg)
+	tester, err := lib.GetTester("ydb", cfg)
 	if err != nil {
-		log.Fatalf("Failed to initialize etcd tester: %v", err)
+		log.Fatalf("Failed to initialize ydb tester: %v", err)
 	}
 	defer tester.Close()
 	var wg sync.WaitGroup
@@ -40,7 +40,7 @@ func main() {
 
 	tester.RunTest(ctx, &wg)
 	wg.Wait()
-	log.Println("Test for etcd completed.")
+	log.Println("Test for ydb completed.")
 
 	duration := time.Since(startTime)
 	log.Printf("Test completed. Duration: %v", duration)

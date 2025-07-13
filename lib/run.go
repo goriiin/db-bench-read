@@ -6,6 +6,7 @@ import (
 	"db-bench/lib/conf"
 	"db-bench/lib/etcd"
 	"db-bench/lib/mongo"
+	"db-bench/lib/mysql"
 	"db-bench/lib/postgre"
 	"fmt"
 	"sync"
@@ -30,6 +31,8 @@ func GetTester(dbType string, cfg *conf.Config) (DatabaseTester, error) {
 		return mongo.NewMongoTester(ctx, cfg)
 	case "etcd":
 		return etcd.NewEtcdTester(ctx, cfg)
+	case "mysql":
+		return mysql.NewMySQLTester(ctx, cfg)
 	default:
 		return nil, fmt.Errorf("unknown database type: %s", dbType)
 	}

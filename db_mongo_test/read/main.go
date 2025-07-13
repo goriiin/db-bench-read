@@ -28,6 +28,7 @@ func main() {
 
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.TestDuration)
 	defer cancel()
+
 	tester, err := lib.GetTester("mongo", cfg)
 	if err != nil {
 		log.Fatalf("Failed to initialize mongo tester: %v", err)
@@ -39,7 +40,7 @@ func main() {
 
 	tester.RunTest(ctx, &wg)
 	wg.Wait()
-	log.Println("Test for postgres completed.")
+	log.Println("Test for mongo completed.")
 
 	duration := time.Since(startTime)
 	log.Printf("Test completed. Duration: %v", duration)

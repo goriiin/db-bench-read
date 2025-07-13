@@ -2,43 +2,42 @@ package mongo
 
 import (
 	"context"
+	"log"
 	"math/rand"
 	"sync"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo"
-
-	"db-bench/lib/conf"
-
-	"github.com/prometheus/client_golang/prometheus"
 )
 
-func RunMongoRead(ctx context.Context, coll *mongo.Collection, dbName string, recordCount, workerCount int, readsTotal, readErrorsTotal *prometheus.CounterVec, readLatency *prometheus.HistogramVec) {
-	var wg sync.WaitGroup
-	for i := 0; i < workerCount; i++ {
+func (t *MongoTester) RunTest(ctx context.Context, wg *sync.WaitGroup) {
+	log.Printf("RunTest db %s", t.cfg.DBName)
+
+	for i := 0; i < t.cfg.WorkerCount; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			var result conf.ExperimentRule
+
 			for {
 				select {
 				case <-ctx.Done():
 					return
 				default:
-					id := rand.Int63n(int64(recordCount)) + 1
-					filter := bson.M{"_id": id}
+					id := rand.Int63n(int64(t.cfg.RecordCount)) + 1
+
 					start := time.Now()
-					err := coll.FindOne(ctx, filter).Decode(&result)
-					readLatency.WithLabelValues(dbName).Observe(time.Since(start).Seconds())
+					var result bson.M
+					err := t.collection.FindOne(ctx, bson.M{"id": id}).Decode(&result)
+					duration := time.Since(start).Seconds()
+					t.cfg.ReadLatency.WithLabelValues(t.cfg.DB).Observe(duration)
+
 					if err != nil {
-						readErrorsTotal.WithLabelValues(dbName).Inc()
+						t.cfg.ReadErrorsTotal.WithLabelValues(t.cfg.DB).Inc()
 					} else {
-						readsTotal.WithLabelValues(dbName).Inc()
+						t.cfg.ReadsTotal.WithLabelValues(t.cfg.DB).Inc()
 					}
 				}
 			}
 		}()
 	}
-	wg.Wait()
 }

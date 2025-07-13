@@ -1,18 +1,22 @@
 services:
-  mongo:
-    image: mongo:7.0
-    container_name: mongo-db
+  ydb:
+    image: cr.yandex/yc/yandex-docker-local-ydb:latest
+    container_name: ydb-db
     ports:
-      - "27017:27017"
+      - "2135:2135"
+      - "8765:8765"
     environment:
-      - MONGO_INITDB_DATABASE=ab_tests
+      - YDB_DEFAULT_LOG_LEVEL=INFO
+      - GRPC_TLS_PORT=2135
+      - GRPC_PORT=2136
+      - MON_PORT=8765
     healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      test: ["CMD", "/ydb", "-e", "grpc://localhost:2136", "scheme", "ls", "/local"]
       interval: 10s
       timeout: 5s
       retries: 5
     volumes:
-      - mongo_data:/data/db
+      - ydb_data:/ydb_data
 
   prometheus:
     image: prom/prometheus:latest
@@ -38,9 +42,9 @@ services:
     container_name: seed_go
     build:
       context: .
-      dockerfile: ./db_mongo_test/seed/Dockerfile
+      dockerfile: ./db_ydb_test/seed/Dockerfile
     depends_on:
-      mongo:
+      ydb:
         condition: service_healthy
     environment:
       - CONFIG_PATH=/app/config.yaml
@@ -49,9 +53,9 @@ services:
     container_name: read_go
     build:
       context: .
-      dockerfile: ./db_mongo_test/read/Dockerfile
+      dockerfile: ./db_ydb_test/read/Dockerfile
     depends_on:
-      mongo:
+      ydb:
         condition: service_healthy
     environment:
       - CONFIG_PATH=/app/config.yaml
@@ -59,6 +63,6 @@ services:
       - "8081:8081"
 
 volumes:
-  mongo_data:
+  ydb_data:
   prometheus_data:
   grafana_data:

@@ -1,5 +1,3 @@
-
-
 workerCount: 100
 recordCount: 100000
 testDuration: 10m
@@ -8,6 +6,9 @@ tableName: experiment_rules
 
 postgres:
   uri: "postgres://user:password@postgres-db:5432/ab_tests"
+  dbName: "ab_tests"
+mysql:
+  uri: "user:password@tcp(mysql-db:3306)/ab_tests?parseTime=true"
   dbName: "ab_tests"
 cassandra:
   uri: "cassandra-db:9042"
@@ -18,3 +19,6 @@ mongo:
 etcd:
   uri: "http://etcd-db:2379"
   dbName: "etcd"
+ydb:
+  uri: "grpc://ydb-db:2136/local"
+  dbName: "/local"

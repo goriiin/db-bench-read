@@ -14,14 +14,14 @@ import (
 
 func main() {
 	configPath := os.Getenv("CONFIG_PATH")
-	cfg, err := conf.LoadConfig("etcd", configPath)
+	cfg, err := conf.LoadConfig("mysql", configPath)
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 
 	go func() {
 		http.Handle("/metrics", promhttp.Handler())
-		log.Fatal(http.ListenAndServe(":8081", nil))
+		log.Fatal(http.ListenAndServe(":8082", nil))
 	}()
 
 	time.Sleep(2 * time.Second)
@@ -29,18 +29,19 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), cfg.TestDuration)
 	defer cancel()
 
-	tester, err := lib.GetTester("etcd", cfg)
+	tester, err := lib.GetTester("mysql", cfg)
 	if err != nil {
-		log.Fatalf("Failed to initialize etcd tester: %v", err)
+		log.Fatalf("Failed to initialize mysql tester: %v", err)
 	}
 	defer tester.Close()
-	var wg sync.WaitGroup
 
+	var wg sync.WaitGroup
 	startTime := time.Now()
 
 	tester.RunTest(ctx, &wg)
 	wg.Wait()
-	log.Println("Test for etcd completed.")
+
+	log.Println("Test for mysql completed.")
 
 	duration := time.Since(startTime)
 	log.Printf("Test completed. Duration: %v", duration)

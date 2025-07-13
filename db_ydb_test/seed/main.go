@@ -10,17 +10,17 @@ import (
 
 func main() {
 	configPath := os.Getenv("CONFIG_PATH")
-	cfg, err := conf.LoadConfig("etcd", configPath)
+	cfg, err := conf.LoadConfig("ydb", configPath)
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
-	tester, err := lib.GetTester("etcd", cfg)
+	tester, err := lib.GetTester("ydb", cfg)
 	if err != nil {
-		log.Fatalf("Failed to initialize etcd tester: %v", err)
+		log.Fatalf("Failed to initialize ydb tester: %v", err)
 	}
 	defer tester.Close()
 	if err := tester.Seed(context.Background()); err != nil {
-		log.Fatalf("Seeding failed for etcd: %v", err)
+		log.Fatalf("Seeding failed for ydb: %v", err)
 	}
-	log.Println("Seeding for etcd completed.")
+	log.Println("Seeding for ydb completed.")
 }

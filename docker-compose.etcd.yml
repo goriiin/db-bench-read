@@ -1,15 +1,27 @@
 services:
-  etcd-db:
-    image: quay.io/coreos/etcd:v3.5.0
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.9
     container_name: etcd-db
     ports:
       - "2379:2379"
-    volumes:
-      - etcddata:/etcd-data
+      - "2380:2380"
     environment:
+      - ETCD_NAME=etcd0
       - ETCD_DATA_DIR=/etcd-data
-      - ALLOW_NONE_AUTHENTICATION=yes
-      - ETCD_ENABLE_V2=true
+      - ETCD_LISTEN_CLIENT_URLS=http://0.0.0.0:2379
+      - ETCD_ADVERTISE_CLIENT_URLS=http://etcd-db:2379
+      - ETCD_LISTEN_PEER_URLS=http://0.0.0.0:2380
+      - ETCD_INITIAL_ADVERTISE_PEER_URLS=http://etcd-db:2380
+      - ETCD_INITIAL_CLUSTER=etcd0=http://etcd-db:2380
+      - ETCD_INITIAL_CLUSTER_STATE=new
+      - ETCD_INITIAL_CLUSTER_TOKEN=etcd-cluster
+    healthcheck:
+      test: ["CMD", "etcdctl", "--endpoints=http://localhost:2379", "endpoint", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - etcd_data:/etcd-data
 
   prometheus:
     image: prom/prometheus:latest
@@ -37,8 +49,8 @@ services:
       context: .
       dockerfile: ./db_etcd_test/seed/Dockerfile
     depends_on:
-      etcd-db:
-        condition: service_started
+      etcd:
+        condition: service_healthy
     environment:
       - CONFIG_PATH=/app/config.yaml
 
@@ -48,14 +60,14 @@ services:
       context: .
       dockerfile: ./db_etcd_test/read/Dockerfile
     depends_on:
-      etcd-db:
-        condition: service_started
+      etcd:
+        condition: service_healthy
     environment:
       - CONFIG_PATH=/app/config.yaml
     ports:
       - "8081:8081"
 
 volumes:
-  etcddata:
+  etcd_data:
   prometheus_data:
   grafana_data:
