@@ -18,7 +18,6 @@ func NewMySQLTester(ctx context.Context, cfg *conf.Config) (*MySQLTester, error)
 		return nil, err
 	}
 
-	// Configure connection pool
 	db.SetMaxOpenConns(cfg.WorkerCount + 10)
 	db.SetMaxIdleConns(cfg.WorkerCount / 2)
 
