@@ -15,6 +15,8 @@ down:
 	docker compose -f docker-compose.cassandra.yml down
 	docker compose -f docker-compose.mongo.yml down
 	docker compose -f docker-compose.etcd.yml down
+	docker compose -f docker-compose.ydb.yml down
+	docker compose -f docker-compose.mysql.yml down
 
 logs:
 	docker compose logs -f tester
